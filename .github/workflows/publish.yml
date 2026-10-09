@@ -1,0 +1,42 @@
+name: Publish community.json
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'entries/**'
+      - 'scripts/**'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-community
+  cancel-in-progress: false
+
+env:
+  R2_BUCKET: recursive-releases
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build community.json
+        run: node scripts/build.mjs --verify-downloads
+      - name: Upload to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error title=Missing secrets::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to this repository to publish."
+            exit 1
+          fi
+          npx --yes wrangler@4 r2 object put "$R2_BUCKET/marketplace/v1/community.json" \
+            --file dist/community.json --content-type application/json --remote
